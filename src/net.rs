@@ -1,17 +1,18 @@
-use std::convert::identity;
 use std::iter::zip;
-use std::ops::{Add, Sub};
+use std::ops::Add;
 
-use nalgebra::{DMatrix, Matrix, OMatrix};
+use nalgebra::DMatrix;
 use rand::prelude::*;
 use rand_distr::Normal;
 
-use crate::dataloader::{Data, DataLine};
+use crate::dataloader::{Data, DataLine, OneHotVector};
+use crate::mat;
+use crate::mat::add;
 
 #[derive(Debug)]
 pub struct Network {
     _sizes: Vec<usize>,
-    _num_layers: usize,
+    num_layers: usize,
     pub biases: Vec<DMatrix<f32>>,
     pub weights: Vec<DMatrix<f32>>,
 }
@@ -30,7 +31,7 @@ impl Network {
     pub fn from(sizes: Vec<usize>) -> Self {
         Self {
             _sizes: sizes.clone(),
-            _num_layers: sizes.len(),
+            num_layers: sizes.len(),
             biases: biases(sizes[1..].to_vec()),
             weights: weights(zip(sizes[..sizes.len() - 1].to_vec(), sizes[1..].to_vec()).collect()),
         }
@@ -39,13 +40,13 @@ impl Network {
     fn feed_forward(&self, input: Vec<f32>) -> Vec<f32> {
         let mut a = DMatrix::from_vec(input.len(), 1, input);
         for (b, w) in zip(&self.biases, &self.weights) {
-            a = b.add_scalar(w.dot(&a));
+            a = add(b.clone(), w * a).unwrap();
             a.apply(sigmoid_inplace);
         }
         a.column(1).iter().map(|v| *v).collect()
     }
 
-    pub fn sgd(&mut self, mut training_data: Data<f32, u8>, epochs: usize, minibatch_size: usize, eta: f32, test_data: &Option<Data<f32, u8>>) {
+    pub fn sgd(&mut self, mut training_data: Data<f32, OneHotVector>, epochs: usize, minibatch_size: usize, eta: f32, test_data: &Option<Data<f32, OneHotVector>>) {
         for j in 0..epochs {
             training_data.shuffle();
             let mini_batches = training_data.as_batches(minibatch_size);
@@ -65,7 +66,7 @@ impl Network {
     /// gradient descent using backpropagation to a single mini batch.
     /// The ``mini_batch`` is a list of tuples ``(x, y)``, and ``eta``
     /// is the learning rate.
-    fn update_mini_batch(&mut self, mini_batch: &[DataLine<f32, u8>], eta: f32) {
+    fn update_mini_batch(&mut self, mini_batch: &[DataLine<f32, OneHotVector>], eta: f32) {
         let mut nabla_b: Vec<DMatrix<f32>> = self.biases.iter()
             .map(|b| b.shape())
             .map(|s| DMatrix::zeros(s.0, s.1))
@@ -75,34 +76,34 @@ impl Network {
             .map(|s| DMatrix::zeros(s.0, s.1))
             .collect();
         for line in mini_batch.iter() {
-            let (delta_nabla_b, delta_nabla_w) = self.backprop(line.inputs.to_vec(), line.label);
+            let (delta_nabla_b, delta_nabla_w) = self.backprop(line.inputs.to_vec(), &line.label);
 
             nabla_b = zip(&nabla_b, &delta_nabla_b).map(|(nb, dnb)| nb.add(dnb)).collect();
             nabla_w = zip(&nabla_w, &delta_nabla_w).map(|(nw, dnw)| nw.add(dnw)).collect();
         }
 
         self.weights = zip(&self.weights, &nabla_w)
-            .map(|(w, nw)| w.add_scalar(-eta / mini_batch.len() as f32)).collect();
+            .map(|(w, nw)| (w.add_scalar(-eta / mini_batch.len() as f32)).component_mul(nw)).collect();
         self.biases = zip(&self.biases, &nabla_b)
-            .map(|(b, nb)| b.add_scalar(-eta / mini_batch.len() as f32)).collect();
+            .map(|(b, nb)| (b.add_scalar(-eta / mini_batch.len() as f32)).component_mul(nb)).collect();
     }
 
     /// Return the number of test inputs for which the neural
     /// network outputs the correct result. Note that the neural
     /// network's output is assumed to be the index of whichever
     /// neuron in the final layer has the highest activation.
-    fn evaluate(&self, test_data: &Data<f32, u8>) -> usize {
-        let test_results: Vec<(usize, u8)> = test_data.0.iter()
-            .map(|line| (argmax(self.feed_forward(line.inputs.clone())), line.label))
+    fn evaluate(&self, test_data: &Data<f32, OneHotVector>) -> usize {
+        let test_results: Vec<(usize, usize)> = test_data.0.iter()
+            .map(|line| (argmax(self.feed_forward(line.inputs.clone())), line.label.val))
             .collect();
-        test_results.into_iter().filter(|(x, y)| *x == *y as usize).count()
+        test_results.into_iter().filter(|(x, y)| x == y).count()
     }
 
     /// Return a tuple `(nabla_b, nabla_w)` representing the
     /// gradient for the cost function C_x.  `nabla_b` and
     /// `nabla_w` are layer-by-layer lists of matrices, similar
     /// to `self.biases` and `self.weights`.
-    fn backprop(&self, x: Vec<f32>, y: u8) -> (Vec<DMatrix<f32>>, Vec<DMatrix<f32>>) {
+    fn backprop(&self, x: Vec<f32>, y: &OneHotVector) -> (Vec<DMatrix<f32>>, Vec<DMatrix<f32>>) {
         // zero_grad ie. set gradient to zero
         let mut nabla_b: Vec<DMatrix<f32>> = self.biases.iter()
             .map(|b| b.shape())
@@ -119,38 +120,40 @@ impl Network {
         let mut zs = vec![];
 
         for (b, w) in zip(&self.biases, &self.weights) {
-            // println!("{:?}", w.shape());
-            // println!("{:?}", activation.shape());
-            // println!("{:?}", b.shape());
-
-            let mut z: DMatrix<f32> = w * &activation + b;
+            let z = add(w * &activation, b.clone()).unwrap();
             zs.push(z.clone());
             activation = z.map(sigmoid);
             activations.push(activation.clone());
         }
-
         // backward pass
-        let delta: DMatrix<f32> = self.cost_derivative(
-            &activations[activations.len() - 1],
-            y as f32);
-        println!("delta {:?}", delta.shape());
-        println!("z {:?}", &zs[zs.len() - 1].transpose().shape());
-        let delta = delta * (&zs[zs.len() - 1].transpose().map(sigmoid_prime));
-        println!("delta {:?}", delta.shape());
+        // delta = self.cost_derivative(activations[-1], y) * sigmoid_prime(zs[-1])
+        let delta: DMatrix<f32> = self.cost_derivative(&activations[activations.len() - 1], y).component_mul((&zs[zs.len() - 1].map(sigmoid_prime)));
         let index = nabla_b.len() - 1;
         nabla_b[index] = delta.clone();
 
-        println!("delta {:?}", delta.shape());
-        println!("activation {:?}", activations[activations.len() - 2].shape());
         let index = nabla_w.len() - 1;
-        nabla_w[index] = delta * &activations[activations.len() - 2];
-
+        let ac = &activations[activations.len() - 2].transpose();
+        nabla_w[index] = &delta * ac;
+        let lens_zs = zs.len();
+        for l in 2..self.num_layers {
+            let z = &zs[lens_zs - l];
+            let sp = z.map(sigmoid_prime);
+            let weight = self.weights[self.weights.len() - l + 1].transpose();
+            let delta2 = (weight * &delta).component_mul(&sp);
+            let len_nb = nabla_b.len();
+            nabla_b[len_nb - l] = delta2.clone();
+            let len_nw = nabla_w.len();
+            nabla_w[len_nw - l] = delta2 * activations[activations.len() - l - 1].transpose();
+        }
 
         (nabla_b, nabla_w)
     }
 
-    fn cost_derivative(&self, output_activations: &DMatrix<f32>, y: f32) -> DMatrix<f32> {
-        output_activations.add_scalar(-y)
+    fn cost_derivative(&self, output_activations: &DMatrix<f32>, y: &OneHotVector) -> DMatrix<f32> {
+        // output_activations - y
+        let shape = output_activations.shape();
+        DMatrix::from_iterator(shape.0, shape.1, output_activations.iter().enumerate()
+            .map(|(index, a)| a - y.get(index)))
     }
 }
 
@@ -171,7 +174,6 @@ fn biases(sizes: Vec<usize>) -> Vec<DMatrix<f32>> {
 }
 
 fn weights(sizes: Vec<(usize, usize)>) -> Vec<DMatrix<f32>> {
-    println!("{:?}", sizes);
     sizes.iter().map(|size| random_matrix(size.1, size.0)).collect()
 }
 
