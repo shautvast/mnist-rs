@@ -6,7 +6,6 @@ use rand::prelude::*;
 use rand_distr::Normal;
 
 use crate::dataloader::{Data, DataLine, OneHotVector};
-use crate::mat;
 use crate::mat::add;
 
 #[derive(Debug)]
@@ -43,7 +42,7 @@ impl Network {
             a = add(b.clone(), w * a).unwrap();
             a.apply(sigmoid_inplace);
         }
-        a.column(1).iter().map(|v| *v).collect()
+        a.column(1).iter().copied().collect()
     }
 
     pub fn sgd(&mut self, mut training_data: Data<f32, OneHotVector>, epochs: usize, minibatch_size: usize, eta: f32, test_data: &Option<Data<f32, OneHotVector>>) {
@@ -127,7 +126,7 @@ impl Network {
         }
         // backward pass
         // delta = self.cost_derivative(activations[-1], y) * sigmoid_prime(zs[-1])
-        let delta: DMatrix<f32> = self.cost_derivative(&activations[activations.len() - 1], y).component_mul((&zs[zs.len() - 1].map(sigmoid_prime)));
+        let delta: DMatrix<f32> = self.cost_derivative(&activations[activations.len() - 1], y).component_mul(&zs[zs.len() - 1].map(sigmoid_prime));
         let index = nabla_b.len() - 1;
         nabla_b[index] = delta.clone();
 

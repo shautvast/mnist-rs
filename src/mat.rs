@@ -3,6 +3,10 @@ use std::fmt::Debug;
 use std::ops::AddAssign;
 use nalgebra::DMatrix;
 
+/// matrix add with broadcasting
+/// like the numpy add operation
+/// not sure I even need it anymore, after fixing inconsistencies with the matrix shapes
+/// TODO see if it's still needed, or that standard matrix addition suffices
 pub fn add<T>(v1: DMatrix<T>, v2: DMatrix<T>) -> Result<DMatrix<T>, String>
     where T: PartialEq + Copy + Clone + Debug + Add + Add<Output=T> + AddAssign + 'static
 {

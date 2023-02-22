@@ -1,6 +1,4 @@
 use std::iter::zip;
-use nalgebra::DMatrix;
-
 use rand::prelude::*;
 use serde::Deserialize;
 
@@ -33,7 +31,6 @@ pub struct DataLine<X, Y> {
     pub label: Y,
 }
 
-pub struct Data<X, Y>(pub Vec<DataLine<X, Y>>);
 
 pub struct OneHotVector{
     pub val: usize
@@ -57,6 +54,8 @@ impl OneHotVector{
 
 }
 
+pub struct Data<X, Y>(pub Vec<DataLine<X, Y>>);
+
 impl<X, Y> Data<X, Y> {
     pub fn shuffle(&mut self) {
         let mut rng = thread_rng();
@@ -65,6 +64,10 @@ impl<X, Y> Data<X, Y> {
 
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    pub fn is_empty(&self, ) -> bool{
+        self.0.is_empty()
     }
 
     pub fn as_batches(&self, batch_size: usize) -> Vec<&[DataLine<X, Y>]> {
