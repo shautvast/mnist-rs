@@ -12,10 +12,11 @@ to do:
 * evaluate with test/validation data
 * make more efficient
 
-training_data/test_data not included
-format: json: 
-[{"x":[float;784], "y": u32}]
-=> x: 28x28 gray image as float
+*training_data/test_data not included*<br/> too big for github
+
+Format: json: <br/>
+[{"x":[float;784], "y": u32}]<br/>
+=> x: 28x28 gray image as float<br/>
 => y: label 0.. 9
 
 the data can be found here:
