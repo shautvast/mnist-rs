@@ -1,62 +1,72 @@
-use std::iter::zip;
+use std::fmt::Debug;
+
 use rand::prelude::*;
 use serde::Deserialize;
 
-pub fn load_data() -> Data<f32, OneHotVector> {
+pub fn load_data() -> (Data<f64, OneHotVector>, Data<f64, OneHotVector>) {
     // the mnist data is structured as
     // x: [[[pixels]],[[pixels]], etc],
     // y: [label1, label2, etc]
     // this is transformed to:
     // Data : Vec<DataLine>
-    // DataLine {inputs: Vec<pixels as f32>, label: f32}
-    let raw_data: RawData = serde_json::from_slice(include_bytes!("data/unittest.json")).unwrap();
-    let mut vec = Vec::new();
-    for (x, y) in zip(raw_data.x, raw_data.y) {
-        vec.push(DataLine { inputs: x, label: onehot(y) });
-    }
+    // DataLine {inputs: Vec<pixels as f64>, label: f64}
+    let raw_training_data: Vec<RawData> = serde_json::from_slice(include_bytes!("data/training.json")).unwrap();
+    let raw_test_data: Vec<RawData> = serde_json::from_slice(include_bytes!("data/test.json")).unwrap();
 
-    Data(vec)
+    let train = vectorize(raw_training_data);
+    let test = vectorize(raw_test_data);
+
+    (Data(train), Data(test))
+}
+
+fn vectorize(raw_training_data: Vec<RawData>) -> Vec<DataLine<f64, OneHotVector>>{
+    let mut result = Vec::new();
+    for line in raw_training_data {
+        result.push(DataLine { inputs: line.x, label: onehot(line.y) });
+    }
+    result
 }
 
 #[derive(Deserialize)]
 struct RawData {
-    x: Vec<Vec<f32>>,
-    y: Vec<u8>,
+    x: Vec<f64>,
+    y: u8,
 }
 
 /// X is type of input
 /// Y is type of output
-pub struct DataLine<X, Y> {
+#[derive(Debug, Clone)]
+pub struct DataLine<X, Y> where X: Clone, Y: Clone {
     pub inputs: Vec<X>,
     pub label: Y,
 }
 
-
-pub struct OneHotVector{
-    pub val: usize
+/// simple way to encode a onehot vector. An object that returns 1.0 if you get the 'right' index, or 0.0 otherwise
+#[derive(Debug, Clone)]
+pub struct OneHotVector {
+    pub val: usize,
 }
 
-impl OneHotVector{
-    fn new(val: usize) -> Self{
-        Self{
+impl OneHotVector {
+    pub fn new(val: usize) -> Self {
+        Self {
             val
         }
     }
 
-    pub fn get(&self, index: usize) -> f32{
+    pub fn get(&self, index: usize) -> f64 {
         if self.val == index {
             1.0
         } else {
             0.0
         }
     }
-
-
 }
 
-pub struct Data<X, Y>(pub Vec<DataLine<X, Y>>);
+#[derive(Debug, Clone)]
+pub struct Data<X, Y>(pub Vec<DataLine<X, Y>>) where X: Clone, Y: Clone ;
 
-impl<X, Y> Data<X, Y> {
+impl<X, Y> Data<X, Y> where X: Clone, Y: Clone {
     pub fn shuffle(&mut self) {
         let mut rng = thread_rng();
         self.0.shuffle(&mut rng);
@@ -66,7 +76,7 @@ impl<X, Y> Data<X, Y> {
         self.0.len()
     }
 
-    pub fn is_empty(&self, ) -> bool{
+    pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
@@ -77,12 +87,11 @@ impl<X, Y> Data<X, Y> {
             batches.push(&self.0[offset..offset + batch_size]);
             offset += batch_size;
         }
-        batches.push(&self.0[offset..self.0.len()]);
         batches
     }
 }
 
 /// returns a vector as matrix where y is one-hot encoded
 fn onehot(y: u8) -> OneHotVector {
-   OneHotVector::new(y as usize)
+    OneHotVector::new(y as usize)
 }

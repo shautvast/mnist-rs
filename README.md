@@ -11,3 +11,5 @@ to do:
 * train using actual training data
 * evaluate with test/validation data
 * make more efficient
+
+training_data/test_data not included
