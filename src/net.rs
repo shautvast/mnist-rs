@@ -6,7 +6,6 @@ use rand::prelude::*;
 use rand_distr::Normal;
 
 use crate::dataloader::{Data, DataLine, OneHotVector};
-use crate::mat::add;
 
 #[derive(Debug)]
 pub struct Network {
@@ -56,7 +55,7 @@ impl Network {
     fn feed_forward_activation(&self, input: Vec<f64>, activation: fn(&mut f64)) -> Vec<f64> {
         let mut a = DMatrix::from_vec(input.len(), 1, input);
         for (b, w) in zip(&self.biases, &self.weights) {
-            a = add(b.clone(), w * a).unwrap();
+            a = b.clone()+ w * a;
             a.apply(activation);
         }
         a.column(0).iter().copied().collect()
@@ -83,14 +82,7 @@ impl Network {
     /// The ``mini_batch`` is a list of tuples ``(x, y)``, and ``eta``
     /// is the learning rate.
     fn update_mini_batch(&mut self, mini_batch: &[DataLine<f64, OneHotVector>], eta: f64) {
-        let mut nabla_b: Vec<DMatrix<f64>> = self.biases.iter()
-            .map(|b| b.shape())
-            .map(|s| DMatrix::zeros(s.0, s.1))
-            .collect();
-        let mut nabla_w: Vec<DMatrix<f64>> = self.weights.iter()
-            .map(|w| w.shape())
-            .map(|s| DMatrix::zeros(s.0, s.1))
-            .collect();
+        let  (mut nabla_b, mut nabla_w) = self.zero_gradient();
         for line in mini_batch.iter() {
             let (delta_nabla_b, delta_nabla_w) = self.backprop(line.inputs.to_vec(), &line.label);
 
@@ -124,15 +116,7 @@ impl Network {
     /// `nabla_w` are layer-by-layer lists of matrices, similar
     /// to `self.biases` and `self.weights`.
     fn backprop(&self, x: Vec<f64>, y: &OneHotVector) -> (Vec<DMatrix<f64>>, Vec<DMatrix<f64>>) {
-        // zero_grad ie. set gradient to zero
-        let mut nabla_b: Vec<DMatrix<f64>> = self.biases.iter()
-            .map(|b| b.shape())
-            .map(|s| DMatrix::zeros(s.0, s.1))
-            .collect();
-        let mut nabla_w: Vec<DMatrix<f64>> = self.weights.iter()
-            .map(|w| w.shape())
-            .map(|s| DMatrix::zeros(s.0, s.1))
-            .collect();
+        let  (mut nabla_b, mut nabla_w) = self.zero_gradient();
 
         // feedforward
         let mut activation = DMatrix::from_vec(x.len(), 1, x);
@@ -168,6 +152,19 @@ impl Network {
 
         (nabla_b, nabla_w)
     }
+
+    fn zero_gradient(&self) -> (Vec<DMatrix<f64>>, Vec<DMatrix<f64>>) {
+        let nabla_b: Vec<DMatrix<f64>> = self.biases.iter()
+            .map(|b| b.shape())
+            .map(|s| DMatrix::zeros(s.0, s.1))
+            .collect();
+        let nabla_w: Vec<DMatrix<f64>> = self.weights.iter()
+            .map(|w| w.shape())
+            .map(|s| DMatrix::zeros(s.0, s.1))
+            .collect();
+        (nabla_b, nabla_w)
+    }
+
 }
 
 fn cost_derivative(output_activations: &DMatrix<f64>, y: &OneHotVector) -> DMatrix<f64> {
@@ -225,7 +222,6 @@ fn sigmoid_prime(val: f64) -> f64 {
 
 #[cfg(test)]
 mod test {
-    use std::convert::identity;
     use nalgebra::DMatrix;
 
     use super::*;
@@ -241,7 +237,7 @@ mod test {
     fn test_sigmoid_inplace() {
         let mut v = 10.0;
         sigmoid_inplace(&mut v);
-        assert_eq!(0.9999546, v);
+        assert_eq!(0.9999546021312976, v);
     }
 
     #[test]
