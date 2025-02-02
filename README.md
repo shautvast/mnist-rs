@@ -13,4 +13,4 @@ Format: json: <br/>
 
 the data can be found here:
 https://github.com/mnielsen/neural-networks-and-deep-learning/blob/master/data/mnist.pkl.gz
-albeit in a different format
+albeit in a different format, convert it with `convert_pickle.py`
