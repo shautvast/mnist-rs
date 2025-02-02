@@ -2,7 +2,7 @@ rust port of python in http://neuralnetworksanddeeplearning.com/chap1.html
 
 main goal: me understanding what's going on
 
-results: up to about 95% accuracy in 30 epochs, lr=0.01, batchsize=10
+results:  ~95% accuracy in 30 epochs, learning rate = 3.0, batchsize = 10
 
 *training_data/test_data not included*<br/> too big for github
 
