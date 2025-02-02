@@ -48,17 +48,17 @@ impl Network {
         }
     }
 
-    fn feed_forward(&self, input: Vec<f64>) -> Vec<f64> {
+    fn feed_forward(&self, input: &DMatrix<f64>) -> DMatrix<f64> {
         self.feed_forward_activation(input, sigmoid_inplace)
     }
 
-    fn feed_forward_activation(&self, input: Vec<f64>, activation: fn(&mut f64)) -> Vec<f64> {
-        let mut a = DMatrix::from_vec(input.len(), 1, input);
+    fn feed_forward_activation(&self, input: &DMatrix<f64>, activation: fn(&mut f64)) -> DMatrix<f64> {
+        let mut a = input.clone();
         for (b, w) in zip(&self.biases, &self.weights) {
-            a = b.clone()+ w * a;
+            a = b + w * a;
             a.apply(activation);
         }
-        a.column(0).iter().copied().collect()
+        a
     }
 
     pub fn sgd(&mut self, mut training_data: Data<f64, OneHotVector>, epochs: usize, minibatch_size: usize, eta: f64, test_data: Option<Data<f64, OneHotVector>>) {
@@ -82,12 +82,10 @@ impl Network {
     /// The ``mini_batch`` is a list of tuples ``(x, y)``, and ``eta``
     /// is the learning rate.
     fn update_mini_batch(&mut self, mini_batch: &[DataLine<f64, OneHotVector>], eta: f64) {
-        let  (mut nabla_b, mut nabla_w) = self.zero_gradient();
+        let (mut nabla_b, mut nabla_w) = self.zero_gradient();
         for line in mini_batch.iter() {
-            let (delta_nabla_b, delta_nabla_w) = self.backprop(line.inputs.to_vec(), &line.label);
+            let (delta_nabla_b, delta_nabla_w) = self.backprop(&line.inputs, &line.label);
 
-            // nabla_b = [nb + dnb for nb, dnb in zip(nabla_b, delta_nabla_b)]
-            // nabla_w = [nw + dnw for nw, dnw in zip(nabla_w, delta_nabla_w)]
             nabla_b = zip(&nabla_b, &delta_nabla_b).map(|(nb, dnb)| nb.add(dnb)).collect();
             nabla_w = zip(&nabla_w, &delta_nabla_w).map(|(nw, dnw)| nw.add(dnw)).collect();
         }
@@ -105,7 +103,7 @@ impl Network {
     /// neuron in the final layer has the highest activation.
     fn evaluate(&self, test_data: &Data<f64, OneHotVector>) -> usize {
         let test_results: Vec<(usize, usize)> = test_data.0.iter()
-            .map(|line| (argmax(self.feed_forward(line.inputs.clone())), line.label.val))
+            .map(|line| (argmax(self.feed_forward(&line.inputs)), line.label.val))
             .collect();
 
         test_results.into_iter().filter(|(x, y)| *x == *y).count()
@@ -115,30 +113,27 @@ impl Network {
     /// gradient for the cost function C_x.  `nabla_b` and
     /// `nabla_w` are layer-by-layer lists of matrices, similar
     /// to `self.biases` and `self.weights`.
-    fn backprop(&self, x: Vec<f64>, y: &OneHotVector) -> (Vec<DMatrix<f64>>, Vec<DMatrix<f64>>) {
-        let  (mut nabla_b, mut nabla_w) = self.zero_gradient();
+    fn backprop(&self, x: &DMatrix<f64>, y: &OneHotVector) -> (Vec<DMatrix<f64>>, Vec<DMatrix<f64>>) {
+        let (mut nabla_b, mut nabla_w) = self.zero_gradient();
 
         // feedforward
-        let mut activation = DMatrix::from_vec(x.len(), 1, x);
+        let mut activation = x.clone();
         let mut activations = vec![activation.clone()];
         let mut zs = vec![];
 
         for (b, w) in zip(&self.biases, &self.weights) {
-            let z = (w * &activation)+b.clone();
+            let z = (w * activation) + b;
             zs.push(z.clone());
             activation = z.map(sigmoid);
             activations.push(activation.clone());
         }
         // backward pass
-        // delta = self.cost_derivative(activations[-1], y) * sigmoid_prime(zs[-1])
         let delta: DMatrix<f64> = cost_derivative(&activations[activations.len() - 1], y).component_mul(&zs[zs.len() - 1].map(sigmoid_prime));
-        // println!("delta {:?}", delta);
         let index = nabla_b.len() - 1;
         nabla_b[index] = delta.clone();
 
         let index = nabla_w.len() - 1;
-        let ac = &activations[activations.len() - 2].transpose();
-        nabla_w[index] = &delta * ac;
+        nabla_w[index] = &delta * (&activations[activations.len() - 2].transpose());
         let lens_zs = zs.len();
         for l in 2..self.num_layers {
             let z = &zs[lens_zs - l];
@@ -164,32 +159,25 @@ impl Network {
             .collect();
         (nabla_b, nabla_w)
     }
-
 }
 
 fn cost_derivative(output_activations: &DMatrix<f64>, y: &OneHotVector) -> DMatrix<f64> {
-    // output_activations - y
-    // println!("output {:?}", output_activations);
-    // println!("expected {:?}", y);
-
     let shape = output_activations.shape();
-    let t = DMatrix::from_iterator(shape.0, shape.1, output_activations.iter().enumerate()
-        .map(|(index, a)| a - y.get(index)));
-    // println!("t {:?}",t);
-    t
+     DMatrix::from_iterator(shape.0, shape.1, output_activations.iter().enumerate()
+        .map(|(index, a)| a - y.get(index)))
 }
 
-fn argmax(val: Vec<f64>) -> usize {
+/// index of max value
+/// only meaningful for single row or column matrix
+fn argmax(val: DMatrix<f64>) -> usize {
     let mut max = 0.0;
     let mut index = 0;
     for (i, x) in val.iter().enumerate() {
-        // print!("{},",x);
         if *x > max {
             index = i;
             max = *x;
         }
     }
-    // println!();
     index
 }
 
@@ -247,7 +235,7 @@ mod test {
 
     #[test]
     fn test_argmax() {
-        assert_eq!(5, argmax(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 4.0, 3.0, 2.0, 1.0]));
+        assert_eq!(5, argmax(DMatrix::from_vec(10, 1, vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 4.0, 3.0, 2.0, 1.0])));
     }
 
     #[test]
@@ -262,15 +250,15 @@ mod test {
         // 2 layers of 2 units
         let mut net = Network::ones(vec![2, 2]);
 
-        let prediction = net.feed_forward_activation(vec![2.0, 2.0], |a| {});
-        assert_eq!(prediction, vec![5.0, 5.0])
+        let prediction = net.feed_forward_activation(&DMatrix::from_vec(2, 1, vec![2.0, 2.0]), |a| {});
+        assert_eq!(prediction, DMatrix::from_vec(2, 1, vec![5.0, 5.0]))
     }
 
     #[test]
     fn test_sgd() {
         // 2 layers of 2 units
         let mut net = Network::ones(vec![2, 2]);
-        let data = Data(vec![DataLine { inputs: vec![1.0, 1.0], label: OneHotVector::new(1) }]);
+        let data = Data(vec![DataLine { inputs: DMatrix::from_vec(2, 1, vec![1.0, 1.0]), label: OneHotVector::new(1) }]);
         net.sgd(data, 1, 1, 0.001, None);
         println!("{:?}", net);
     }

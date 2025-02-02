@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use nalgebra::DMatrix;
 
 use rand::prelude::*;
 use serde::Deserialize;
@@ -10,8 +11,8 @@ pub fn load_data() -> (Data<f64, OneHotVector>, Data<f64, OneHotVector>) {
     // this is transformed to:
     // Data : Vec<DataLine>
     // DataLine {inputs: Vec<pixels as f64>, label: f64}
-    let raw_training_data: Vec<RawData> = serde_json::from_slice(include_bytes!("data/training.json")).unwrap();
-    let raw_test_data: Vec<RawData> = serde_json::from_slice(include_bytes!("data/test.json")).unwrap();
+    let raw_training_data: Vec<RawData> = serde_json::from_slice(include_bytes!("data/training_data.json")).unwrap();
+    let raw_test_data: Vec<RawData> = serde_json::from_slice(include_bytes!("data/test_data.json")).unwrap();
 
     let train = vectorize(raw_training_data);
     let test = vectorize(raw_test_data);
@@ -19,10 +20,10 @@ pub fn load_data() -> (Data<f64, OneHotVector>, Data<f64, OneHotVector>) {
     (Data(train), Data(test))
 }
 
-fn vectorize(raw_training_data: Vec<RawData>) -> Vec<DataLine<f64, OneHotVector>>{
+fn vectorize(raw_training_data: Vec<RawData>) -> Vec<DataLine<f64, OneHotVector>> {
     let mut result = Vec::new();
     for line in raw_training_data {
-        result.push(DataLine { inputs: line.x, label: onehot(line.y) });
+        result.push(DataLine { inputs: DMatrix::from_vec(line.x.len(), 1, line.x), label: onehot(line.y) });
     }
     result
 }
@@ -37,7 +38,7 @@ struct RawData {
 /// Y is type of output
 #[derive(Debug, Clone)]
 pub struct DataLine<X, Y> where X: Clone, Y: Clone {
-    pub inputs: Vec<X>,
+    pub inputs: DMatrix<X>,
     pub label: Y,
 }
 
@@ -64,7 +65,7 @@ impl OneHotVector {
 }
 
 #[derive(Debug, Clone)]
-pub struct Data<X, Y>(pub Vec<DataLine<X, Y>>) where X: Clone, Y: Clone ;
+pub struct Data<X, Y>(pub Vec<DataLine<X, Y>>) where X: Clone, Y: Clone;
 
 impl<X, Y> Data<X, Y> where X: Clone, Y: Clone {
     pub fn shuffle(&mut self) {
