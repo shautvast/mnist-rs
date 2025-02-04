@@ -4,15 +4,18 @@ use nalgebra::DMatrix;
 use rand::prelude::*;
 use serde::Deserialize;
 
-pub fn load_data() -> (Data<f64, OneHotVector>, Data<f64, OneHotVector>) {
+pub fn load_data() -> (Data<f32, OneHotVector>, Data<f32, OneHotVector>)
+{
     // the mnist data is structured as
     // x: [[[pixels]],[[pixels]], etc],
     // y: [label1, label2, etc]
     // this is transformed to:
     // Data : Vec<DataLine>
     // DataLine {inputs: Vec<pixels as f64>, label: f64}
-    let raw_training_data: Vec<RawData> = serde_json::from_slice(include_bytes!("data/training_data.json")).unwrap();
-    let raw_test_data: Vec<RawData> = serde_json::from_slice(include_bytes!("data/test_data.json")).unwrap();
+    let raw_training_data: Vec<RawData> =
+        serde_json::from_slice(include_bytes!("data/training_data.json")).unwrap();
+    let raw_test_data: Vec<RawData> =
+        serde_json::from_slice(include_bytes!("data/test_data.json")).unwrap();
 
     let train = vectorize(raw_training_data);
     let test = vectorize(raw_test_data);
@@ -20,17 +23,19 @@ pub fn load_data() -> (Data<f64, OneHotVector>, Data<f64, OneHotVector>) {
     (Data(train), Data(test))
 }
 
-fn vectorize(raw_training_data: Vec<RawData>) -> Vec<DataLine<f64, OneHotVector>> {
+fn vectorize(raw_data: Vec<RawData>) -> Vec<DataLine<f32, OneHotVector>>
+{
     let mut result = Vec::new();
-    for line in raw_training_data {
+    for line in raw_data {
         result.push(DataLine { inputs: DMatrix::from_vec(line.x.len(), 1, line.x), label: onehot(line.y) });
     }
     result
 }
 
 #[derive(Deserialize)]
-struct RawData {
-    x: Vec<f64>,
+struct RawData
+{
+    x: Vec<f32>,
     y: u8,
 }
 
@@ -43,19 +48,17 @@ pub struct DataLine<X, Y> where X: Clone, Y: Clone {
 }
 
 /// simple way to encode a onehot vector. An object that returns 1.0 if you get the 'right' index, or 0.0 otherwise
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OneHotVector {
     pub val: usize,
 }
 
-impl OneHotVector {
+impl OneHotVector{
     pub fn new(val: usize) -> Self {
-        Self {
-            val
-        }
+        Self { val }
     }
 
-    pub fn get(&self, index: usize) -> f64 {
+    pub fn get(&self, index: usize) -> f32 {
         if self.val == index {
             1.0
         } else {
@@ -69,7 +72,7 @@ pub struct Data<X, Y>(pub Vec<DataLine<X, Y>>) where X: Clone, Y: Clone;
 
 impl<X, Y> Data<X, Y> where X: Clone, Y: Clone {
     pub fn shuffle(&mut self) {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         self.0.shuffle(&mut rng);
     }
 
